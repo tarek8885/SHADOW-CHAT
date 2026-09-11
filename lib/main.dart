@@ -828,7 +828,8 @@ Future<void> showChangeGroupPasswordDialog(BuildContext context) async {
       final doc = await FirebaseFirestore.instance
           .collection('config')
           .doc('secretGroup')
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 12));
       final value = doc.data()?['passwordHash'];
       storedHash = value is String
           ? value
@@ -4103,7 +4104,8 @@ class _SecretChatScreenState extends State<SecretChatScreen>
                     .set({
                       'passwordHash': await hashPassword(newPassword),
                       'updatedAt': FieldValue.serverTimestamp(),
-                    }, SetOptions(merge: true));
+                    }, SetOptions(merge: true))
+                    .timeout(const Duration(seconds: 12));
                 final newHash = await hashPassword(newPassword);
                 if (mounted) setState(() => _groupPasswordHash = newHash);
                 if (dialogContext.mounted) Navigator.pop(dialogContext);
@@ -4115,9 +4117,10 @@ class _SecretChatScreenState extends State<SecretChatScreen>
                 debugPrint('Group password update error: $error');
                 if (mounted)
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('تعذر حفظ كلمة سر المجموعة في Firebase'),
-                    ),
+                    SnackBar(content: Text(firebaseUserError(
+                      error,
+                      fallback: 'تعذر حفظ كلمة سر المجموعة',
+                    ))),
                   );
               }
             },
@@ -4658,19 +4661,32 @@ class _SecretChatScreenState extends State<SecretChatScreen>
                                 style: const TextStyle(color: Colors.white54),
                               ),
                               onTap: () async {
-                                await FirebaseFirestore.instance
-                                    .collection('rooms')
-                                    .doc('secret_group')
-                                    .collection('members')
-                                    .doc(contacts[index].id)
-                                    .set({
-                                      'displayName':
-                                          data['displayName'] ?? 'جهة اتصال',
-                                      'addedBy': owner?.uid,
-                                      'addedAt': FieldValue.serverTimestamp(),
-                                    });
-                                if (dialogContext.mounted)
-                                  Navigator.pop(dialogContext);
+                                try {
+                                  await FirebaseFirestore.instance
+                                      .collection('rooms')
+                                      .doc('secret_group')
+                                      .collection('members')
+                                      .doc(contacts[index].id)
+                                      .set({
+                                        'displayName':
+                                            data['displayName'] ?? 'جهة اتصال',
+                                        'addedBy': owner?.uid,
+                                        'addedAt': FieldValue.serverTimestamp(),
+                                      })
+                                      .timeout(const Duration(seconds: 12));
+                                  if (dialogContext.mounted) {
+                                    Navigator.pop(dialogContext);
+                                  }
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(firebaseUserError(
+                                        error,
+                                        fallback: 'إضافة أعضاء المجموعة متاحة للمالك فقط',
+                                      ))),
+                                    );
+                                  }
+                                }
                               },
                             );
                           },
