@@ -70,10 +70,15 @@ service cloud.firestore {
         && request.resource.data.text.size() <= 4000
         && request.resource.data.uid == request.auth.uid;
       allow update: if canAccessChat(chatId)
-        && resource.data.uid == request.auth.uid
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['deletedFor']);
+            .hasOnly(['deletedFor'])
+        && request.resource.data.deletedFor is list
+        && resource.data.deletedFor is list
+        && request.resource.data.deletedFor.hasAll(resource.data.deletedFor)
+        && request.resource.data.deletedFor.hasOnly(
+          resource.data.deletedFor.concat([request.auth.uid])
+        );
       allow delete: if canAccessChat(chatId)
         && resource.data.uid == request.auth.uid;
     }

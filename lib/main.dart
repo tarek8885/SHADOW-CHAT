@@ -4503,12 +4503,12 @@ class _SecretChatScreenState extends State<SecretChatScreen>
         .doc(docId);
     try {
       if (forEveryone && message['isMe'] == true) {
-        await reference.delete();
+        await reference.delete().timeout(const Duration(seconds: 12));
         await _deleteSecretMedia(message, remote: true);
       } else {
         await reference.update({
           'deletedFor': FieldValue.arrayUnion([user.uid]),
-        });
+        }).timeout(const Duration(seconds: 12));
         await _deleteSecretMedia(message, remote: false);
       }
       if (mounted) {
@@ -4520,7 +4520,10 @@ class _SecretChatScreenState extends State<SecretChatScreen>
       debugPrint('Secret message delete error: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر حذف الرسالة من Firebase')),
+          SnackBar(content: Text(firebaseUserError(
+            error,
+            fallback: 'تعذر حذف الرسالة، تحقق من اتصال Firebase',
+          ))),
         );
       }
     }
