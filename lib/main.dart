@@ -2746,6 +2746,39 @@ class _ContactsScreenState extends State<ContactsScreen> {
     }
   }
 
+  Future<void> _removeSecretMember(String memberUid, String displayName) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (!firebaseReady || user == null || memberUid.isEmpty) return;
+
+    final roomId = widget.scope == ContactScope.group
+        ? 'secret_group'
+        : 'secret_room';
+    try {
+      await FirebaseFirestore.instance
+          .collection('rooms')
+          .doc(roomId)
+          .collection('members')
+          .doc(memberUid)
+          .delete()
+          .timeout(const Duration(seconds: 12));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تمت إزالة $displayName من ${widget.scope == ContactScope.group ? 'المجموعة' : 'الغرفة'}')),
+        );
+      }
+    } catch (error) {
+      debugPrint('Secret member removal error: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(firebaseUserError(
+            error,
+            fallback: 'إزالة العضو متاحة لمالك ${widget.scope == ContactScope.group ? 'المجموعة' : 'الغرفة'} فقط',
+          ))),
+        );
+      }
+    }
+  }
+
   Future<void> _addContact() async {
     final input = _contactIdController.text.trim();
     final String publicId = input.toUpperCase();
@@ -3233,6 +3266,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
                                 data['contactId'] ?? docs[index].id,
                                 style: const TextStyle(color: Colors.white54),
                               ),
+                              trailing: widget.scope == ContactScope.regular
+                                  ? null
+                                  : IconButton(
+                                      icon: const Icon(
+                                        Icons.person_remove_alt_1,
+                                        color: Colors.redAccent,
+                                      ),
+                                      tooltip: 'إزالة العضو',
+                                      onPressed: () => _removeSecretMember(
+                                        docs[index].id,
+                                        (data['displayName'] ?? 'العضو').toString(),
+                                      ),
+                                    ),
                               onTap: () {
                                 final status = data['status'] as String? ?? 'pending';
                                 if (widget.scope == ContactScope.regular &&
