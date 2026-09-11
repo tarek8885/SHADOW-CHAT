@@ -2457,6 +2457,55 @@ String contactsCollectionName(ContactScope scope) {
   }
 }
 
+Map<String, dynamic> buildContactRelationshipData({
+  required String currentUserUid,
+  required String targetUid,
+  required String displayName,
+  required String publicId,
+  required String status,
+}) {
+  final safeDisplayName = displayName.isEmpty ? 'جهة اتصال' : displayName;
+  return {
+    'contactId': publicId,
+    'uid': targetUid,
+    'displayName': safeDisplayName,
+    'lastMessage': status == 'pending'
+        ? 'طلب اتصال في انتظار الموافقة'
+        : 'لا توجد رسائل',
+    'name': safeDisplayName,
+    'status': status,
+    'updatedAt': FieldValue.serverTimestamp(),
+    'createdAt': FieldValue.serverTimestamp(),
+  };
+}
+
+Map<String, dynamic> buildIncomingContactRequestData({
+  required String currentUserUid,
+  required String senderUid,
+  required String senderDisplayName,
+}) {
+  final safeDisplayName = senderDisplayName.isEmpty ? 'مستخدم' : senderDisplayName;
+  return {
+    'contactId': senderUid,
+    'uid': senderUid,
+    'displayName': safeDisplayName,
+    'name': safeDisplayName,
+    'lastMessage': 'طلب اتصال جديد',
+    'status': 'incoming',
+    'updatedAt': FieldValue.serverTimestamp(),
+    'createdAt': FieldValue.serverTimestamp(),
+  };
+}
+
+bool canWriteSecretMembership({
+  required String currentUserUid,
+  required String memberId,
+  required String addedBy,
+  required bool isOwner,
+}) {
+  return addedBy == currentUserUid && (memberId == currentUserUid || isOwner);
+}
+
 class ContactsScreen extends StatefulWidget {
   final ContactScope scope;
   final bool ownerVerified;
@@ -2536,16 +2585,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
       return;
     }
 
-    final contactData = {
-      'contactId': publicId,
-      'uid': targetUid,
-      'displayName': displayName.isEmpty ? 'جهة اتصال' : displayName,
-      'lastMessage': status == 'pending' ? 'طلب اتصال في انتظار الموافقة' : 'لا توجد رسائل',
-      'name': displayName.isEmpty ? 'جهة اتصال' : displayName,
-      'status': status,
-      'updatedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-    };
+    final contactData = buildContactRelationshipData(
+      currentUserUid: user.uid,
+      targetUid: targetUid,
+      displayName: displayName,
+      publicId: publicId,
+      status: status,
+    );
 
     await FirebaseFirestore.instance
         .collection('users')
@@ -2777,16 +2823,14 @@ class _ContactsScreenState extends State<ContactsScreen> {
           .doc(targetUid)
           .collection(contactsCollectionName(ContactScope.regular))
           .doc(user.uid)
-          .set({
-            'contactId': user.uid,
-            'uid': user.uid,
-            'displayName': user.displayName ?? 'مستخدم',
-            'name': user.displayName ?? 'مستخدم',
-            'lastMessage': 'طلب اتصال جديد',
-            'status': 'incoming',
-            'updatedAt': FieldValue.serverTimestamp(),
-            'createdAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          .set(
+            buildIncomingContactRequestData(
+              currentUserUid: user.uid,
+              senderUid: user.uid,
+              senderDisplayName: user.displayName ?? 'مستخدم',
+            ),
+            SetOptions(merge: true),
+          );
 
       _contactIdController.clear();
       _nameController.clear();
@@ -2903,16 +2947,14 @@ class _ContactsScreenState extends State<ContactsScreen> {
           .doc(targetUid)
           .collection(contactsCollectionName(ContactScope.regular))
           .doc(user.uid)
-          .set({
-            'contactId': user.uid,
-            'uid': user.uid,
-            'displayName': user.displayName ?? 'مستخدم',
-            'name': user.displayName ?? 'مستخدم',
-            'lastMessage': 'طلب اتصال جديد',
-            'status': 'incoming',
-            'updatedAt': FieldValue.serverTimestamp(),
-            'createdAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          .set(
+            buildIncomingContactRequestData(
+              currentUserUid: user.uid,
+              senderUid: user.uid,
+              senderDisplayName: user.displayName ?? 'مستخدم',
+            ),
+            SetOptions(merge: true),
+          );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4260,7 +4302,16 @@ class _SecretChatScreenState extends State<SecretChatScreen>
           .child('secret_media')
           .child(mediaType)
           .child(fileName)
-          .putFile(File(file.path));
+          .putFile(
+            File(file.path),
+            SettableMetadata(
+              contentType: mediaType == 'audio'
+                  ? 'audio/m4a'
+                  : mediaType == 'video'
+                  ? 'video/mp4'
+                  : 'image/jpeg',
+            ),
+          );
       final snapshot = await uploadTask;
       return await snapshot.ref.getDownloadURL();
     } catch (error) {
@@ -6604,6 +6655,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isOtherTyping = false;
   bool _hasLoadedMessages = false;
   bool _chatLocked = false;
+  bool _chatSecurityLoaded = false;
+  bool _chatSecurityLoadFailed = false;
   bool _directAccessChecked = false;
   bool _directAccessApproved = true;
   String? _chatPassword;
@@ -6638,6 +6691,87 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   String get _localVoiceMessagesKey => 'local_voice_messages_$_chatId';
+  String get _localMediaMessagesKey => 'local_media_messages_$_chatId';
+
+  Future<void> _loadLocalMediaMessages() async {
+    final preferences = await getSafeSharedPreferences();
+    if (preferences == null) return;
+    try {
+      final encoded = preferences.getString(_localMediaMessagesKey);
+      if (encoded == null || encoded.isEmpty) return;
+      final storedMessages = jsonDecode(encoded);
+      if (storedMessages is! List) return;
+
+      final restoredMessages = <Message>[];
+      for (final item in storedMessages) {
+        if (item is! Map) continue;
+        final path = item['path'];
+        final mediaType = item['mediaType'];
+        if (path is! String || mediaType is! String || !await File(path).exists()) {
+          continue;
+        }
+        restoredMessages.add(
+          Message(
+            originalText: item['text'] as String? ?? '🖼️ صورة',
+            encryptedData: path,
+            isMe: true,
+            time: item['time'] as String? ?? _messageTime(null),
+            mediaType: mediaType,
+            mediaFile: XFile(path),
+            mediaUrl: 'local://$path',
+          ),
+        );
+      }
+      if (mounted && restoredMessages.isNotEmpty) {
+        setState(() => _messages.addAll(restoredMessages));
+      }
+    } catch (error) {
+      debugPrint('Local media messages load error: $error');
+    }
+  }
+
+  Future<void> _saveLocalMediaMessage({
+    required String path,
+    required String mediaType,
+    required String text,
+    required String time,
+  }) async {
+    final preferences = await getSafeSharedPreferences();
+    if (preferences == null) return;
+    try {
+      final storedMessages = <Map<String, String>>[];
+      final encoded = preferences.getString(_localMediaMessagesKey);
+      if (encoded != null && encoded.isNotEmpty) {
+        final decoded = jsonDecode(encoded);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map && item['path'] is String) {
+              storedMessages.add({
+                'path': item['path'] as String,
+                'mediaType': item['mediaType'] as String? ?? 'image',
+                'text': item['text'] as String? ?? '🖼️ صورة',
+                'time': item['time'] as String? ?? time,
+              });
+            }
+          }
+        }
+      }
+      if (storedMessages.every((item) => item['path'] != path)) {
+        storedMessages.add({
+          'path': path,
+          'mediaType': mediaType,
+          'text': text,
+          'time': time,
+        });
+      }
+      await preferences.setString(
+        _localMediaMessagesKey,
+        jsonEncode(storedMessages),
+      );
+    } catch (error) {
+      debugPrint('Local media message save error: $error');
+    }
+  }
 
   Future<void> _loadLocalVoiceMessages() async {
     final preferences = await getSafeSharedPreferences();
@@ -6717,7 +6851,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           _directAccessApproved = true;
           _directAccessChecked = true;
         });
-        _listenToChatMessages();
+        _listenToChatMessagesIfAllowed();
       }
       return;
     }
@@ -6743,13 +6877,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     whaleSoundNotifier.addListener(_onWhaleSoundChanged);
     _chatPassword = chatPasswordsNotifier.value[widget.chatName];
     _chatLocked = _chatPassword != null;
-    _loadChatPassword();
+    unawaited(_loadChatPassword());
     _loadLocalVoiceMessages();
+    _loadLocalMediaMessages();
     if (widget.contactUid != null && widget.contactUid!.isNotEmpty) {
       unawaited(_ensureDirectChatAccess());
     } else {
       _directAccessChecked = true;
-      _listenToChatMessages();
+      _listenToChatMessagesIfAllowed();
     }
     if (!_chatLocked && whaleSoundNotifier.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -6837,9 +6972,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadChatPassword() async {
-    if (!firebaseReady) return;
+    if (!firebaseReady) {
+      _chatSecurityLoaded = true;
+      return;
+    }
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      _chatSecurityLoaded = true;
+      return;
+    }
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('users')
@@ -6856,11 +6997,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
     } catch (error) {
       debugPrint('Chat password load error: $error');
+      _chatSecurityLoadFailed = true;
     }
+    _chatSecurityLoaded = true;
+    _listenToChatMessagesIfAllowed();
+  }
+
+  void _listenToChatMessagesIfAllowed() {
+    if (!_chatSecurityLoaded ||
+      _chatSecurityLoadFailed ||
+        _chatLocked ||
+        !_directAccessChecked ||
+        !_directAccessApproved) {
+      return;
+    }
+    _listenToChatMessages();
   }
 
   void _listenToChatMessages() {
-    if (!firebaseReady) return;
+    if (!firebaseReady || _messagesSubscription != null) return;
     _messagesSubscription = FirebaseFirestore.instance
         .collection('chats')
         .doc(_chatId)
@@ -7066,6 +7221,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         _chatLocked = false;
         _chatPasswordController.clear();
       });
+      _listenToChatMessagesIfAllowed();
       if (whaleSoundNotifier.value) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !_chatLocked) unawaited(_playWhaleSound());
@@ -7410,6 +7566,13 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             mediaType,
             mediaUrl,
           );
+        } else {
+          await _saveLocalMediaMessage(
+            path: mediaUrl.substring('local://'.length),
+            mediaType: mediaType,
+            text: video ? '🎬 فيديو' : '🖼️ صورة',
+            time: _messageTime(null),
+          );
         }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -7462,6 +7625,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       final fileName = '${mediaType}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+        final contentType = _mediaContentType(file.name, mediaType);
       final uploadTask = FirebaseStorage.instance
           .ref()
           .child('users')
@@ -7469,7 +7633,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           .child('media')
           .child(mediaType)
           .child(fileName)
-          .putFile(File(file.path));
+          .putFile(
+            File(file.path),
+            SettableMetadata(contentType: contentType),
+          );
 
       final snapshot = await uploadTask;
       final downloadUrl = await snapshot.ref.getDownloadURL();
@@ -7485,6 +7652,38 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
       return saveLocally();
     }
+  }
+
+  String _fileExtension(String fileName) {
+    final dotIndex = fileName.lastIndexOf('.');
+    if (dotIndex < 0 || dotIndex == fileName.length - 1) {
+      return 'octet-stream';
+    }
+    final extension = fileName.substring(dotIndex + 1).toLowerCase();
+    const allowedExtensions = {
+      'jpg',
+      'jpeg',
+      'png',
+      'webp',
+      'gif',
+      'heic',
+      'mp4',
+      'mov',
+      'webm',
+      'm4a',
+      'aac',
+      'mp3',
+      'wav',
+    };
+    return allowedExtensions.contains(extension) ? extension : 'octet-stream';
+  }
+
+  String _mediaContentType(String fileName, String mediaType) {
+    final extension = _fileExtension(fileName);
+    if (extension == 'octet-stream') {
+      return '$mediaType/${mediaType == 'image' ? 'jpeg' : mediaType == 'video' ? 'mp4' : 'm4a'}';
+    }
+    return '$mediaType/$extension';
   }
 
   Future<void> _saveUploadedMediaMessage(

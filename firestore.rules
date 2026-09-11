@@ -100,23 +100,31 @@ service cloud.firestore {
 
     match /users/{userId}/regularContacts/{contactId} {
       allow read: if isSelf(userId);
-      allow create: if (isSelf(userId)
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.status == 'pending')
-        || (signedIn()
+      allow create: if (
+          isSelf(userId)
+          && request.resource.data.uid == contactId
+          && request.resource.data.status in ['pending', 'accepted', 'rejected']
+        )
+        || (
+          signedIn()
           && contactId == request.auth.uid
           && request.resource.data.uid == request.auth.uid
-          && request.resource.data.status == 'incoming');
-      allow update: if (isSelf(userId)
-          && resource.data.uid == request.auth.uid
+          && request.resource.data.status == 'incoming'
+        );
+      allow update: if (
+          isSelf(userId)
+          && resource.data.uid == contactId
           && ((resource.data.status == 'incoming'
                 && request.resource.data.status in ['accepted', 'rejected'])
               || (resource.data.status == 'pending'
-                && request.resource.data.status == 'rejected')))
-        || (signedIn()
+                && request.resource.data.status in ['accepted', 'rejected']))
+        )
+        || (
+          signedIn()
           && resource.data.uid == request.auth.uid
           && resource.data.status == 'pending'
-          && request.resource.data.status in ['accepted', 'rejected']);
+          && request.resource.data.status in ['accepted', 'rejected']
+        );
       allow delete: if isSelf(userId)
         || (signedIn() && resource.data.uid == request.auth.uid);
     }

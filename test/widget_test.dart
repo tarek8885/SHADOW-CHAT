@@ -27,6 +27,51 @@ void main() {
     )), isFalse);
   });
 
+  test('contact docs store the target uid for the current user relationship', () {
+    final myRelationship = buildContactRelationshipData(
+      currentUserUid: 'user-1',
+      targetUid: 'user-2',
+      displayName: 'Ali',
+      publicId: 'SC-ABC123',
+      status: 'pending',
+    );
+
+    expect(myRelationship['uid'], 'user-2');
+    expect(myRelationship['contactId'], 'SC-ABC123');
+    expect(myRelationship['status'], 'pending');
+
+    final incomingRequest = buildIncomingContactRequestData(
+      currentUserUid: 'user-1',
+      senderUid: 'user-3',
+      senderDisplayName: 'Sara',
+    );
+
+    expect(incomingRequest['uid'], 'user-3');
+    expect(incomingRequest['contactId'], 'user-3');
+    expect(incomingRequest['status'], 'incoming');
+  });
+
+  test('secret room members are only added by the owner or the same user', () {
+    expect(
+      canWriteSecretMembership(
+        currentUserUid: 'owner',
+        memberId: 'member-1',
+        addedBy: 'owner',
+        isOwner: true,
+      ),
+      isTrue,
+    );
+    expect(
+      canWriteSecretMembership(
+        currentUserUid: 'user-1',
+        memberId: 'user-2',
+        addedBy: 'user-1',
+        isOwner: false,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('Shadow Chat app starts', (WidgetTester tester) async {
     appLockEnabledNotifier.value = true;
     appLockPasswordNotifier.value = await hashPassword(defaultAppLockPassword);
