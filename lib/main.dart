@@ -922,6 +922,24 @@ bool isDuplicateFirebaseInitializationError(Object error) {
       text.contains('already exists');
 }
 
+String firebaseUserError(Object error, {String fallback = 'تعذر تنفيذ العملية'}) {
+  if (error is FirebaseException) {
+    switch (error.code) {
+      case 'permission-denied':
+        return 'ليس لديك صلاحية لتنفيذ العملية. تأكد من نشر قواعد Firebase.';
+      case 'unavailable':
+      case 'deadline-exceeded':
+        return 'تعذر الاتصال بـ Firebase، تحقق من الإنترنت وحاول مرة أخرى.';
+      case 'failed-precondition':
+        return 'إعداد Firebase غير مكتمل، تأكد من تفعيل الخدمة المطلوبة.';
+    }
+  }
+  if (error is TimeoutException) {
+    return 'انتهت مهلة الاتصال بـ Firebase، حاول مرة أخرى.';
+  }
+  return fallback;
+}
+
 Future<SharedPreferences?> getSafeSharedPreferences() async {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
     return null;
@@ -2458,7 +2476,7 @@ String contactsCollectionName(ContactScope scope) {
 Map<String, dynamic> buildContactRelationshipData({
   required String currentUserUid,
   required String targetUid,
-  required String displayName,
+  reString displayName,
   required String publicId,
   required String status,
 }) {
@@ -2596,7 +2614,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
         .doc(user.uid)
         .collection(contactsCollectionName(widget.scope))
         .doc(targetUid)
-        .set(contactData, SetOptions(merge: true));
+      .set(contactData, SetOptions(merge: true))
+      .timeout(const Duration(seconds: 12));
 
     if (widget.scope != ContactScope.regular) {
       final roomId = widget.scope == ContactScope.group
@@ -2828,7 +2847,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
               senderDisplayName: user.displayName ?? 'مستخدم',
             ),
             SetOptions(merge: true),
-          );
+          )
+          .timeout(const Duration(seconds: 12));
 
       _contactIdController.clear();
       _nameController.clear();
@@ -2839,6 +2859,14 @@ class _ContactsScreenState extends State<ContactsScreen> {
       }
     } catch (error) {
       debugPrint('Contact save error: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(firebaseUserError(
+            error,
+            fallback: 'تعذر إرسال الطلب، تحقق من اتصال Firebase',
+          ))),
+        );
+      }
     }
   }
 
@@ -2900,7 +2928,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
           .doc(user.uid)
           .collection(contactsCollectionName(ContactScope.regular))
           .doc(targetUid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 12));
       final myStatus = (myExisting.data()?['status'] as String?) ?? 'none';
       if (myStatus == 'accepted') {
         if (mounted) {
@@ -2916,7 +2945,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
           .doc(targetUid)
           .collection(contactsCollectionName(ContactScope.regular))
           .doc(user.uid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 12));
       final otherStatus = (otherExisting.data()?['status'] as String?) ?? 'none';
       if (otherStatus == 'accepted') {
         await _saveContactRelationship(
@@ -2952,7 +2982,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
               senderDisplayName: user.displayName ?? 'مستخدم',
             ),
             SetOptions(merge: true),
-          );
+          )
+          .timeout(const Duration(seconds: 12));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2963,7 +2994,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
       debugPrint('One-tap add request error: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر إرسال طلب الموافقة')),
+          SnackBar(content: Text(firebaseUserError(
+            error,
+            fallback: 'تعذر إرسال طلب الموافقة',
+          ))),
         );
       }
     } finally {
@@ -7064,7 +7098,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ..sort(),
         'chatType': widget.contactUid == null ? 'group' : 'direct',
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)).timeout(const Duration(seconds: 12));
 
       await chatRef.collection('messages').add({
         'text': isEncrypted ? await _realEncrypt(text) : text,
@@ -7077,7 +7111,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           'expiresAt': Timestamp.fromDate(
             DateTime.now().add(const Duration(seconds: 8)),
           ),
-      });
+      }).timeout(const Duration(seconds: 12));
 
       await showChatNotification(
         chatTitle: widget.chatName,
@@ -7110,7 +7144,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       debugPrint('Chat message save error: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر حفظ الرسالة في Firebase')),
+          SnackBar(content: Text(firebaseUserError(
+            error,
+            fallback: 'تعذر حفظ الرسالة، تحقق من اتصال Firebase',
+          ))),
         );
       }
     }

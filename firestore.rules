@@ -99,7 +99,8 @@ service cloud.firestore {
     }
 
     match /users/{userId}/regularContacts/{contactId} {
-      allow read: if isSelf(userId);
+      allow read: if isSelf(userId)
+        || (signedIn() && contactId == request.auth.uid);
       allow create: if (
           isSelf(userId)
           && request.resource.data.uid == contactId
