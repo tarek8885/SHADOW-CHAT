@@ -3939,7 +3939,6 @@ class _SecretChatScreenState extends State<SecretChatScreen>
       _secretMessages[0]['roomNote'] = 'قناة خاصة وآمنة داخل الغرفة السرية';
     }
     _loadLocalSecretVoiceMessages();
-    _listenToSecretMessages();
     _loadSecretMembership();
     _loadGroupPassword();
     if (!widget.requirePassword) {
@@ -4155,7 +4154,10 @@ class _SecretChatScreenState extends State<SecretChatScreen>
             'addedBy': user.uid,
             'addedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
-      if (mounted) setState(() => _isSecretMember = true);
+      if (mounted) {
+        setState(() => _isSecretMember = true);
+        if (_isUnlocked) _listenToSecretMessages();
+      }
     } catch (error) {
       debugPrint('Secret membership save error: $error');
     }
@@ -4179,7 +4181,10 @@ class _SecretChatScreenState extends State<SecretChatScreen>
           .collection('members')
           .doc(user.uid)
           .get();
-      if (mounted) setState(() => _isSecretMember = membership.exists);
+      if (mounted) {
+        setState(() => _isSecretMember = membership.exists);
+        if (_isUnlocked && _isSecretMember) _listenToSecretMessages();
+      }
     } catch (error) {
       debugPrint('Secret membership load error: $error');
       if (mounted) setState(() => _isSecretMember = false);
@@ -4187,7 +4192,8 @@ class _SecretChatScreenState extends State<SecretChatScreen>
   }
 
   void _listenToSecretMessages() {
-    if (!firebaseReady) return;
+    if (!firebaseReady || !_isUnlocked || !_isSecretMember) return;
+    if (_secretMessagesSubscription != null) return;
     _secretMessagesSubscription = FirebaseFirestore.instance
         .collection('chats')
         .doc(_secretChatId)
@@ -4430,26 +4436,34 @@ class _SecretChatScreenState extends State<SecretChatScreen>
     }
     try {
       final user = FirebaseAuth.instance.currentUser;
-      await FirebaseFirestore.instance
+      if (user == null) return;
+      final chatRef = FirebaseFirestore.instance
           .collection('chats')
-          .doc(_secretChatId)
-          .collection('messages')
-          .add({
+          .doc(_secretChatId);
+      await chatRef.set({
+        'chatType': 'group',
+        'participants': [user.uid],
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)).timeout(const Duration(seconds: 12));
+      await chatRef.collection('messages').add({
             'sender': 'أنت',
             'text': text,
-            'uid': user?.uid,
+            'uid': user.uid,
             'deletedFor': <String>[],
             'createdAt': FieldValue.serverTimestamp(),
             if (autoDeleteMessagesNotifier.value)
               'expiresAt': Timestamp.fromDate(
                 DateTime.now().add(const Duration(seconds: 8)),
               ),
-          });
+          }).timeout(const Duration(seconds: 12));
     } catch (error) {
       debugPrint('Secret message save error: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر حفظ الرسالة في Firebase')),
+          SnackBar(content: Text(firebaseUserError(
+            error,
+            fallback: 'تعذر حفظ الرسالة، تحقق من اتصال Firebase',
+          ))),
         );
       }
     }

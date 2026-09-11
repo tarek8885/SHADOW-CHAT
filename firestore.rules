@@ -49,7 +49,17 @@ service cloud.firestore {
     function canAccessChat(chatId) {
       let chat = get(/databases/$(database)/documents/chats/$(chatId)).data;
       return signedIn()
-        && (chat.chatType != 'direct' || isApprovedDirectChat(chatId));
+        && (
+          (chat.chatType == 'direct' && isApprovedDirectChat(chatId))
+          || (chat.chatType != 'direct'
+            && (
+              (chatId == 'secret_group'
+                && isMember('secret_group', request.auth.uid))
+              || (chatId == 'shadow_ops'
+                && isMember('secret_room', request.auth.uid))
+              || (chatId != 'secret_group' && chatId != 'shadow_ops')
+            ))
+        );
     }
 
     match /chats/{chatId}/messages/{messageId} {
