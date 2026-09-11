@@ -10,7 +10,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:path_provider/path_provider.dart';
@@ -956,7 +955,6 @@ Future<void> initializeFirebase() async {
               messagingSenderId: '663578459909',
               projectId: 'shadow-chat-318a0',
               authDomain: 'shadow-chat-318a0.firebaseapp.com',
-              storageBucket: 'shadow-chat-318a0.firebasestorage.app',
             ),
           );
         } else {
@@ -4288,69 +4286,6 @@ class _SecretChatScreenState extends State<SecretChatScreen>
     }
   }
 
-  Future<String?> _uploadSecretMedia(XFile file, String mediaType) async {
-    if (!firebaseReady) return null;
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    try {
-      final fileName = 'secret_${mediaType}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-      final uploadTask = FirebaseStorage.instance
-          .ref()
-          .child('users')
-          .child(user.uid)
-          .child('secret_media')
-          .child(mediaType)
-          .child(fileName)
-          .putFile(
-            File(file.path),
-            SettableMetadata(
-              contentType: mediaType == 'audio'
-                  ? 'audio/m4a'
-                  : mediaType == 'video'
-                  ? 'video/mp4'
-                  : 'image/jpeg',
-            ),
-          );
-      final snapshot = await uploadTask;
-      return await snapshot.ref.getDownloadURL();
-    } catch (error) {
-      debugPrint('Secret media upload error: $error');
-      return null;
-    }
-  }
-
-  Future<void> _saveSecretMediaMessage(
-    String text,
-    String mediaType,
-    String? mediaUrl,
-  ) async {
-    if (!firebaseReady || mediaUrl == null) return;
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      await FirebaseFirestore.instance
-          .collection('chats')
-          .doc(_secretChatId)
-          .collection('messages')
-          .add({
-            'sender': 'أنت',
-            'text': text,
-            'uid': user.uid,
-            'deletedFor': <String>[],
-            'mediaType': mediaType,
-            'mediaUrl': mediaUrl,
-            'createdAt': FieldValue.serverTimestamp(),
-            if (autoDeleteMessagesNotifier.value)
-              'expiresAt': Timestamp.fromDate(
-                DateTime.now().add(const Duration(seconds: 8)),
-              ),
-          });
-    } catch (error) {
-      debugPrint('Secret media save error: $error');
-    }
-  }
-
   Future<void> _toggleSecretVoiceRecording() async {
     if (_isSecretRecording) {
       try {
@@ -4376,24 +4311,8 @@ class _SecretChatScreenState extends State<SecretChatScreen>
           setState(() => _secretMessages.add(secretMsg));
         }
 
-        String? remoteUrl;
-        if (firebaseReady) {
-          remoteUrl = await _uploadSecretMedia(voiceFile, 'audio');
-          if (remoteUrl != null && mounted) {
-            setState(() {
-              final last = _secretMessages.isNotEmpty ? _secretMessages.last : null;
-              if (last != null) {
-                last['mediaUrl'] = remoteUrl;
-              }
-            });
-          }
-        }
-
-        if (remoteUrl == null && localPath != null) {
+        if (localPath != null) {
           await _saveLocalSecretVoiceMessage(path, messageTime);
-        }
-        if (remoteUrl != null) {
-          await _saveSecretMediaMessage('رسالة صوتية 🎙️', 'audio', remoteUrl);
         }
       } catch (error) {
         debugPrint('Secret voice recording stop error: $error');
@@ -4567,13 +4486,6 @@ class _SecretChatScreenState extends State<SecretChatScreen>
       } catch (error) {
         debugPrint('Secret local media delete error: $error');
       }
-    }
-    final mediaUrl = message['mediaUrl'] as String?;
-    if (!remote || mediaUrl == null || mediaUrl.isEmpty) return;
-    try {
-      await FirebaseStorage.instance.refFromURL(mediaUrl).delete();
-    } catch (error) {
-      debugPrint('Secret Firebase media delete error: $error');
     }
   }
 
@@ -7464,10 +7376,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             _messages.add(voiceMessage);
             _scheduleMessageDeletion(voiceMessage);
           });
-          if (uploadedMediaUrl != null &&
-              !uploadedMediaUrl.startsWith('local://')) {
-            await _saveUploadedMediaMessage('🎙️ رسالة صوتية', 'audio', mediaUrl);
-          }
         }
       } catch (error) {
         debugPrint('Voice recording stop error: $error');
@@ -7560,13 +7468,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         });
         
         // لا نرسل local:// إلى Firebase؛ هذا المسار صالح على هذا الجهاز فقط.
-        if (!mediaUrl.startsWith('local://')) {
-          await _saveUploadedMediaMessage(
-            video ? '🎬 فيديو' : '🖼️ صورة',
-            mediaType,
-            mediaUrl,
-          );
-        } else {
+        if (mediaUrl.startsWith('local://')) {
           await _saveLocalMediaMessage(
             path: mediaUrl.substring('local://'.length),
             mediaType: mediaType,
@@ -7619,147 +7521,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       }
     }
 
-    if (!firebaseReady) return saveLocally();
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return saveLocally();
-
-    try {
-      final fileName = '${mediaType}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-        final contentType = _mediaContentType(file.name, mediaType);
-      final uploadTask = FirebaseStorage.instance
-          .ref()
-          .child('users')
-          .child(user.uid)
-          .child('media')
-          .child(mediaType)
-          .child(fileName)
-          .putFile(
-            File(file.path),
-            SettableMetadata(contentType: contentType),
-          );
-
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
-      return downloadUrl;
-    } catch (error) {
-      debugPrint('Media upload error: $error');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر الرفع للسحابة، تم حفظ الملف على الجهاز'),
-          ),
-        );
-      }
-      return saveLocally();
-    }
-  }
-
-  String _fileExtension(String fileName) {
-    final dotIndex = fileName.lastIndexOf('.');
-    if (dotIndex < 0 || dotIndex == fileName.length - 1) {
-      return 'octet-stream';
-    }
-    final extension = fileName.substring(dotIndex + 1).toLowerCase();
-    const allowedExtensions = {
-      'jpg',
-      'jpeg',
-      'png',
-      'webp',
-      'gif',
-      'heic',
-      'mp4',
-      'mov',
-      'webm',
-      'm4a',
-      'aac',
-      'mp3',
-      'wav',
-    };
-    return allowedExtensions.contains(extension) ? extension : 'octet-stream';
-  }
-
-  String _mediaContentType(String fileName, String mediaType) {
-    final extension = _fileExtension(fileName);
-    if (extension == 'octet-stream') {
-      return '$mediaType/${mediaType == 'image' ? 'jpeg' : mediaType == 'video' ? 'mp4' : 'm4a'}';
-    }
-    return '$mediaType/$extension';
-  }
-
-  Future<void> _saveUploadedMediaMessage(
-    String text,
-    String mediaType,
-    String? mediaUrl,
-  ) async {
-    if (!firebaseReady ||
-        mediaUrl == null ||
-        mediaUrl.isEmpty ||
-        mediaUrl.startsWith('local://')) {
-      return;
-    }
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      final chatRef = FirebaseFirestore.instance
-          .collection('chats')
-          .doc(_chatId);
-      
-      await chatRef.set({
-        'participantA': widget.contactUid == null
-          ? user.uid
-          : ([user.uid, widget.contactUid!]..sort())[0],
-        'participantB': widget.contactUid == null
-          ? user.uid
-          : ([user.uid, widget.contactUid!]..sort())[1],
-        'participants':
-            widget.contactUid == null
-                  ? [user.uid]
-                  : [user.uid, widget.contactUid].toList()
-              ..sort(),
-        'chatType': widget.contactUid == null ? 'group' : 'direct',
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      await chatRef.collection('messages').add({
-        'text': text,
-        'uid': user.uid,
-        'sender': 'مستخدم',
-        'deletedFor': <String>[],
-        'mediaType': mediaType,
-        'mediaUrl': mediaUrl,
-        if (widget.contactUid != null) 'recipientUid': widget.contactUid,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      // تحديث lastMessage في جهات الاتصال
-      if (widget.contactUid != null) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection(contactsCollectionName(ContactScope.regular))
-            .doc(widget.contactUid)
-            .get();
-
-        if (userDoc.exists) {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .collection(contactsCollectionName(ContactScope.regular))
-              .doc(widget.contactUid)
-              .update({
-                'lastMessage': text,
-                'updatedAt': FieldValue.serverTimestamp(),
-              });
-        }
-      }
-    } catch (error) {
-      debugPrint('Media message save error: $error');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ في حفظ الرسالة: $error')),
-        );
-      }
-    }
+    return saveLocally();
   }
 
   void _showMediaPicker() {
@@ -7848,14 +7610,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       } catch (error) {
         debugPrint('Local media delete error: $error');
       }
-    }
-    if (!remote || message.mediaUrl == null || message.mediaUrl!.isEmpty) {
-      return;
-    }
-    try {
-      await FirebaseStorage.instance.refFromURL(message.mediaUrl!).delete();
-    } catch (error) {
-      debugPrint('Firebase media delete error: $error');
     }
   }
 
