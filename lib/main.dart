@@ -790,7 +790,7 @@ Future<void> showChangeAppLockPasswordDialog(BuildContext context) async {
               if (dialogContext.mounted) Navigator.pop(dialogContext);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('تم حفظ كلمة السر في Firebase')),
+                  const SnackBar(content: Text('تم حفظ كلمة السر بنجاح')),
                 );
               }
             } catch (error) {
@@ -800,8 +800,8 @@ Future<void> showChangeAppLockPasswordDialog(BuildContext context) async {
                   SnackBar(
                     content: Text(
                       firebaseFailureMessage.contains('operation-not-allowed')
-                          ? 'فعّل Anonymous Authentication في Firebase Console'
-                          : 'تم حفظ كلمة السر على الجهاز، وستتم مزامنتها عند اتصال Firebase',
+                          ? 'فعّل تسجيل الدخول المجهول من إعدادات المشروع'
+                          : 'تم حفظ كلمة السر على الجهاز، وستتم مزامنتها عند توفر الاتصال',
                     ),
                   ),
                 );
@@ -873,7 +873,7 @@ Future<void> showChangeGroupPasswordDialog(BuildContext context) async {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
-                      'كلمة السر القديمة غير صحيحة أو Firebase غير متصل',
+                      'كلمة السر القديمة غير صحيحة أو الخدمة غير متاحة',
                     ),
                   ),
                 );
@@ -927,16 +927,16 @@ String firebaseUserError(Object error, {String fallback = 'تعذر تنفيذ �
   if (error is FirebaseException) {
     switch (error.code) {
       case 'permission-denied':
-        return 'ليس لديك صلاحية لتنفيذ العملية. تأكد من نشر قواعد Firebase.';
+        return 'ليس لديك صلاحية لتنفيذ العملية. تحقق من إعدادات الوصول.';
       case 'unavailable':
       case 'deadline-exceeded':
-        return 'تعذر الاتصال بـ Firebase، تحقق من الإنترنت وحاول مرة أخرى.';
+        return 'تعذر الاتصال بالخدمة، تحقق من الإنترنت وحاول مرة أخرى.';
       case 'failed-precondition':
-        return 'إعداد Firebase غير مكتمل، تأكد من تفعيل الخدمة المطلوبة.';
+        return 'إعداد الخدمة غير مكتمل، حاول مرة أخرى لاحقًا.';
     }
   }
   if (error is TimeoutException) {
-    return 'انتهت مهلة الاتصال بـ Firebase، حاول مرة أخرى.';
+    return 'انتهت مهلة الاتصال، حاول مرة أخرى.';
   }
   return fallback;
 }
@@ -1308,7 +1308,7 @@ class _AuthGateState extends State<AuthGate> {
       return Scaffold(
         body: Center(
           child: Text(
-            'الوضع المحلي مفعل\nسيتم استكمال المزايا عند اتصال Firebase',
+            'الوضع المحلي مفعل\nسيتم استكمال المزايا عند توفر الاتصال',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleMedium,
           ),
@@ -1793,7 +1793,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   border: Border.all(color: const Color(0xFF00FF66), width: 1),
                 ),
                 child: const Text(
-                  '💾 سيتم حفظ بياناتك بأمان في Firebase\nجميع البيانات مشفرة وآمنة 🔐',
+                  '💾 سيتم حفظ بياناتك بأمان\nجميع البيانات مشفرة وآمنة 🔐',
                   style: TextStyle(
                     color: Color(0xFF00FF66),
                     fontSize: 12,
@@ -1960,14 +1960,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم حذف الدردشة من Firebase')),
+          const SnackBar(content: Text('تم حذف الدردشة')),
         );
       }
     } catch (error) {
       debugPrint('Chat contact removal error: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر حذف الدردشة من Firebase')),
+          const SnackBar(content: Text('تعذر حذف الدردشة، حاول مرة أخرى')),
         );
       }
     }
@@ -2897,7 +2897,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(firebaseUserError(
             error,
-            fallback: 'تعذر إرسال الطلب، تحقق من اتصال Firebase',
+            fallback: 'تعذر إرسال الطلب، تحقق من الاتصال وحاول مرة أخرى',
           ))),
         );
       }
@@ -2922,7 +2922,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     if (!firebaseReady || user == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('يحتاج التطبيق إلى اتصال Firebase لإضافة مستخدم من التطبيق')),
+          const SnackBar(content: Text('يحتاج التطبيق إلى اتصال بالإنترنت لإضافة مستخدم')),
         );
       }
       return;
@@ -3223,7 +3223,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
               child: user == null
                   ? const Center(
                       child: Text(
-                        'Firebase غير متصل',
+                        'الخدمة غير متاحة حاليًا',
                         style: TextStyle(color: Colors.white70),
                       ),
                     )
@@ -3855,7 +3855,7 @@ class SecretMembersScreen extends StatelessWidget {
         body: !firebaseReady
             ? const Center(
                 child: Text(
-                  'Firebase غير متصل',
+                  'الخدمة غير متاحة حاليًا',
                   style: TextStyle(color: Colors.white70),
                 ),
               )
@@ -4079,7 +4079,7 @@ class _SecretChatScreenState extends State<SecretChatScreen>
     if (!firebaseReady) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('تعذر الاتصال بـ Firebase')));
+      ).showSnackBar(const SnackBar(content: Text('تعذر الاتصال بالخدمة')));
       oldController.dispose();
       newController.dispose();
       confirmController.dispose();
@@ -4515,7 +4515,7 @@ class _SecretChatScreenState extends State<SecretChatScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(firebaseUserError(
             error,
-            fallback: 'تعذر حفظ الرسالة، تحقق من اتصال Firebase',
+            fallback: 'تعذر حفظ الرسالة، تحقق من الاتصال وحاول مرة أخرى',
           ))),
         );
       }
@@ -4571,7 +4571,7 @@ class _SecretChatScreenState extends State<SecretChatScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(firebaseUserError(
             error,
-            fallback: 'تعذر حذف الرسالة، تحقق من اتصال Firebase',
+            fallback: 'تعذر حذف الرسالة، تحقق من الاتصال وحاول مرة أخرى',
           ))),
         );
       }
@@ -4631,7 +4631,7 @@ class _SecretChatScreenState extends State<SecretChatScreen>
         builder: (dialogContext) => AlertDialog(
           title: const Text('حذف لدى الجميع'),
           content: const Text(
-            'سيتم حذف الرسالة والوسائط المرتبطة بها من Firebase لدى جميع المشاركين.',
+            'سيتم حذف الرسالة والوسائط المرتبطة بها لدى جميع المشاركين.',
           ),
           actions: [
             TextButton(
@@ -4755,12 +4755,12 @@ class _SecretChatScreenState extends State<SecretChatScreen>
 
   String _firebaseUnavailableMessage() {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
-      return 'Firebase Firestore غير مدعوم على Linux desktop. شغّل التطبيق على Android أو Chrome.';
+      return 'الخدمة غير مدعومة على Linux desktop. شغّل التطبيق على Android أو Chrome.';
     }
     if (firebaseFailureMessage.contains('operation-not-allowed')) {
-      return 'فعّل Anonymous Authentication من Firebase Console ثم أعد تشغيل التطبيق.';
+      return 'فعّل تسجيل الدخول المجهول من إعدادات المشروع ثم أعد تشغيل التطبيق.';
     }
-    return 'Firebase غير متصل: لم يتم حفظ الرسالة. فعّل Anonymous Authentication وتأكد من إعداد Firebase Web.';
+    return 'الخدمة غير متاحة: لم يتم حفظ الرسالة. تحقق من الاتصال وحاول مرة أخرى.';
   }
 
   String _formatMessageTime() {
@@ -6092,7 +6092,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('تم حذف سجل المحادثات من Firebase'),
+                          content: Text('تم حذف سجل المحادثات'),
                         ),
                       );
                     }
@@ -6100,7 +6100,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('تعذر حذف سجل المحادثات من Firebase'),
+                          content: Text('تعذر حذف سجل المحادثات، حاول مرة أخرى'),
                         ),
                       );
                     }
@@ -7232,7 +7232,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(firebaseUserError(
             error,
-            fallback: 'تعذر حفظ الرسالة، تحقق من اتصال Firebase',
+            fallback: 'تعذر حفظ الرسالة، تحقق من الاتصال وحاول مرة أخرى',
           ))),
         );
       }
@@ -7241,12 +7241,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   String _firebaseUnavailableMessage() {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
-      return 'Firebase Firestore غير مدعوم على Linux desktop. شغّل التطبيق على Android أو Chrome.';
+      return 'الخدمة غير مدعومة على Linux desktop. شغّل التطبيق على Android أو Chrome.';
     }
     if (firebaseFailureMessage.contains('operation-not-allowed')) {
-      return 'فعّل Anonymous Authentication من Firebase Console ثم أعد تشغيل التطبيق.';
+      return 'فعّل تسجيل الدخول المجهول من إعدادات المشروع ثم أعد تشغيل التطبيق.';
     }
-    return 'Firebase غير متصل: لم يتم حفظ الرسالة. فعّل Anonymous Authentication وتأكد من إعداد Firebase Web.';
+    return 'الخدمة غير متاحة: لم يتم حفظ الرسالة. تحقق من الاتصال وحاول مرة أخرى.';
   }
 
   Future<void> _unlockChat() async {
@@ -7373,7 +7373,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('تعذر حفظ كلمة السر في Firebase'),
+                      content: Text('تعذر حفظ كلمة السر، حاول مرة أخرى'),
                     ),
                   );
                 }
@@ -7777,7 +7777,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       debugPrint('Regular message delete error: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر حذف الرسالة من Firebase')),
+          const SnackBar(content: Text('تعذر حذف الرسالة، حاول مرة أخرى')),
         );
       }
     }
@@ -7821,7 +7821,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         builder: (dialogContext) => AlertDialog(
           title: const Text('حذف لدى الجميع'),
           content: const Text(
-            'سيتم حذف الرسالة والوسائط المرتبطة بها من Firebase لدى جميع المشاركين.',
+            'سيتم حذف الرسالة والوسائط المرتبطة بها لدى جميع المشاركين.',
           ),
           actions: [
             TextButton(
@@ -9076,25 +9076,25 @@ class _AccountAndThemeScreenState extends State<AccountAndThemeScreen> {
       case 'invalid-phone-number':
         return 'رقم الهاتف غير صحيح، استخدم الصيغة الدولية مثل +201xxxxxxxxx';
       case 'app-not-authorized':
-        return 'تطبيق Android غير مصرح به في Firebase؛ أضف package name وبصمات SHA-1 وSHA-256 للتطبيق الصحيح';
+        return 'تطبيق Android غير مصرح به؛ راجع package name وبصمات SHA-1 وSHA-256';
       case 'missing-client-identifier':
         return 'إعدادات تطبيق Android ناقصة؛ أضف google-services.json وأعد بناء التطبيق';
       case 'captcha-check-failed':
-        return 'فشل التحقق من التطبيق؛ تأكد من SHA-1 وSHA-256 وإعدادات reCAPTCHA في Firebase';
+        return 'فشل التحقق من التطبيق؛ راجع بصمات SHA-1 وSHA-256 وإعدادات التحقق';
       case 'invalid-app-credential':
         return 'بيانات اعتماد التطبيق غير صحيحة؛ تأكد أن google-services.json من نفس مشروع Firebase';
       case 'quota-exceeded':
-        return 'تم تجاوز حصة رسائل SMS في Firebase، حاول لاحقًا أو راجع خطة المشروع';
+        return 'تم تجاوز حصة رسائل SMS، حاول لاحقًا';
       case 'network-request-failed':
-        return 'تعذر الاتصال بخدمة Firebase، تحقق من الإنترنت ثم أعد المحاولة';
+        return 'تعذر الاتصال بالخدمة، تحقق من الإنترنت ثم أعد المحاولة';
       case 'too-many-requests':
         return 'تم تجاوز عدد المحاولات، حاول لاحقًا';
       case 'operation-not-allowed':
-        return 'فعّل تسجيل الدخول برقم الهاتف من Firebase Console';
+        return 'فعّل تسجيل الدخول برقم الهاتف من إعدادات المشروع';
       case 'user-not-found':
         return 'لم يتم العثور على الحساب الحالي';
       default:
-        return 'تعذر ربط رقم الهاتف. تحقق من الرقم واتصال Firebase';
+        return 'تعذر ربط رقم الهاتف. تحقق من الرقم والاتصال';
     }
   }
 
