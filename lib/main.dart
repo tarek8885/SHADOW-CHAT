@@ -1838,7 +1838,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   void _chooseChatToSecure(BuildContext context) {
-    const List<String> chats = [];
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1849,30 +1848,61 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
         content: SizedBox(
           width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: chats.length,
-            itemBuilder: (context, index) => ListTile(
-              leading: const Icon(
-                Icons.chat_bubble_outline,
-                color: Color(0xFF00FF66),
-              ),
-              title: Text(
-                chats[index],
-                style: const TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(dialogContext);
-                _setChatPassword(context, chats[index]);
-              },
-            ),
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseAuth.instance.currentUser == null
+                ? null
+                : FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(FirebaseAuth.instance.currentUser!.uid)
+                    .collection(contactsCollectionName(ContactScope.regular))
+                    .where('status', isEqualTo: 'accepted')
+                    .snapshots(),
+            builder: (context, snapshot) {
+              final docs = snapshot.data?.docs ?? const [];
+              if (docs.isEmpty) {
+                return const Text(
+                  'لا توجد دردشات مقبولة لتأمينها',
+                  style: TextStyle(color: Colors.white70),
+                );
+              }
+              return ListView.builder(
+                shrinkWrap: true,
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final data = docs[index].data();
+                  final chatName = (data['displayName'] ?? 'دردشة').toString();
+                  final contactUid = docs[index].id;
+                  return ListTile(
+                    leading: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: Color(0xFF00FF66),
+                    ),
+                    title: Text(
+                      chatName,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(dialogContext);
+                      _setChatPassword(context, chatName, chatId: directChatDocumentId(
+                        FirebaseAuth.instance.currentUser!.uid,
+                        contactUid,
+                      ));
+                    },
+                  );
+                },
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  void _setChatPassword(BuildContext context, String chatName) {
+  void _setChatPassword(
+    BuildContext context,
+    String chatName, {
+    required String chatId,
+  }) {
     final TextEditingController passwordController = TextEditingController();
     showDialog(
       context: context,
@@ -1901,7 +1931,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               final String password = passwordController.text.trim();
               if (password.length < 4) return;
               try {
-                await saveChatPassword(chatName, password);
+                await saveChatPassword(chatId, password);
               } catch (error) {
                 debugPrint('Chat password save error: $error');
                 return;
@@ -2292,7 +2322,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => ChatScreen(
+                                        builder: (context) => ChatPasswordGate(
                                           chatName: contactName.toString(),
                                           contactUid: contactUid,
                                         ),
@@ -6650,6 +6680,163 @@ class _ShellMediaPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+class ChatPasswordGate extends StatefulWidget {
+  final String chatName;
+  final String contactUid;
+
+  const ChatPasswordGate({
+    super.key,
+    required this.chatName,
+    required this.contactUid,
+  });
+
+  @override
+  State<ChatPasswordGate> createState() => _ChatPasswordGateState();
+}
+
+class _ChatPasswordGateState extends State<ChatPasswordGate> {
+  final TextEditingController _passwordController = TextEditingController();
+  String? _passwordHash;
+  bool _loading = true;
+  bool _unlocked = false;
+
+  String get _chatId {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return directChatDocumentId('', widget.contactUid);
+    return directChatDocumentId(user.uid, widget.contactUid);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPassword();
+  }
+
+  Future<void> _loadPassword() async {
+    if (!firebaseReady) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('chatSecurity')
+          .doc(_chatId)
+          .get()
+          .timeout(const Duration(seconds: 12));
+      final passwordHash = snapshot.data()?['passwordHash'];
+      if (mounted) {
+        setState(() {
+          _passwordHash = passwordHash is String ? passwordHash : null;
+          _loading = false;
+        });
+      }
+    } catch (error) {
+      debugPrint('Chat security load error: $error');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _passwordHash = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _unlock() async {
+    if (_passwordHash == null) return;
+    if (await hashPassword(_passwordController.text.trim()) == _passwordHash) {
+      if (mounted) {
+        setState(() {
+          _unlocked = true;
+          _passwordController.clear();
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('كلمة المرور غير صحيحة')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF101716),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF38E8A5)),
+        ),
+      );
+    }
+    if (_passwordHash == null || _unlocked) {
+      return ChatScreen(
+        chatName: widget.chatName,
+        contactUid: widget.contactUid,
+      );
+    }
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B1220),
+      appBar: AppBar(
+        title: const Text('دردشة محمية'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF17243A),
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_rounded, color: Color(0xFF00FF66), size: 64),
+              const SizedBox(height: 20),
+              const Text(
+                'أدخل كلمة المرور للوصول إلى المحادثة',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, letterSpacing: 3),
+                decoration: const InputDecoration(
+                  hintText: '••••••••',
+                  prefixIcon: Icon(Icons.key_rounded, color: Colors.amberAccent),
+                ),
+                onSubmitted: (_) => _unlock(),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _unlock,
+                  icon: const Icon(Icons.lock_open_rounded),
+                  label: const Text('فتح الدردشة'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ChatScreen extends StatefulWidget {
   final String chatName;
   final String? contactUid;
@@ -6907,9 +7094,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     clearHistoryNotifier.addListener(_clearChatMessages);
     whaleMotionNotifier.addListener(_onWhaleMotionChanged);
     whaleSoundNotifier.addListener(_onWhaleSoundChanged);
-    _chatPassword = chatPasswordsNotifier.value[widget.chatName];
-    _chatLocked = _chatPassword != null;
-    unawaited(_loadChatPassword());
+    _chatSecurityLoaded = true;
+    _chatLocked = false;
     _loadLocalVoiceMessages();
     _loadLocalMediaMessages();
     if (widget.contactUid != null && widget.contactUid!.isNotEmpty) {
@@ -6918,9 +7104,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _directAccessChecked = true;
       _listenToChatMessagesIfAllowed();
     }
-    if (!_chatLocked && whaleSoundNotifier.value) {
+    if (whaleSoundNotifier.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_chatLocked) unawaited(_playWhaleSound());
+        if (mounted) unawaited(_playWhaleSound());
       });
     }
 
@@ -8298,7 +8484,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
       );
     }
-    if (_chatLocked) return _buildLockedChat();
     const isDark = true;
     return Theme(
       data: ThemeData.dark(useMaterial3: true),
@@ -8359,20 +8544,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             ),
                             tooltip: 'رجوع',
                             onPressed: () => Navigator.pop(context),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              _chatPassword == null
-                                  ? Icons.lock_outline_rounded
-                                  : Icons.lock_reset_rounded,
-                              color: const Color(0xFFB7FFD8),
-                            ),
-                            tooltip: _chatPassword == null
-                                ? 'تأمين الدردشة'
-                                : 'تغيير كلمة السر',
-                            onPressed: _chatPassword == null
-                                ? _setChatPasswordForCurrentChat
-                                : _changeChatPassword,
                           ),
                           Expanded(
                             child:
