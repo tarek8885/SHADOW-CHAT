@@ -3961,6 +3961,9 @@ class _SecretChatScreenState extends State<SecretChatScreen>
       if (!_isSecretMember) {
         await _loadSecretMembership();
       }
+      if (!_isSecretMember && !widget.requirePassword) {
+        await _ensureSecretMembership();
+      }
       if (!_isSecretMember) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -4153,7 +4156,7 @@ class _SecretChatScreenState extends State<SecretChatScreen>
             'displayName': user.displayName ?? 'عضو المجموعة',
             'addedBy': user.uid,
             'addedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          }, SetOptions(merge: true)).timeout(const Duration(seconds: 12));
       if (mounted) {
         setState(() => _isSecretMember = true);
         if (_isUnlocked) _listenToSecretMessages();
@@ -4180,7 +4183,8 @@ class _SecretChatScreenState extends State<SecretChatScreen>
           .doc(roomId)
           .collection('members')
           .doc(user.uid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 12));
       if (mounted) {
         setState(() => _isSecretMember = membership.exists);
         if (_isUnlocked && _isSecretMember) _listenToSecretMessages();
@@ -6635,14 +6639,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   String _presenceText(Map<String, dynamic>? data) {
     if (data?['isOnline'] == true) return 'متصل الآن';
     final value = data?['lastSeen'];
-    if (value is! Timestamp) return 'آخر ظهور غير متاح';
-    final date = value.toDate().toLocal();
-    final localizations = MaterialLocalizations.of(context);
-    final formattedDate = localizations.formatShortDate(date);
-    final formattedTime = localizations.formatTimeOfDay(
-      TimeOfDay.fromDateTime(date),
-    );
-    return 'آخر ظهور $formattedDate - $formattedTime';
+    final date = value is Timestamp
+        ? value.toDate().toLocal()
+        : value is DateTime
+        ? value.toLocal()
+        : null;
+    if (date == null) return 'آخر ظهور غير متاح';
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return 'آخر ظهور $day/$month/${date.year} - $hour:$minute';
   }
 
   String _messageTime(dynamic value) {
