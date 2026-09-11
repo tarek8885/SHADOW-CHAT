@@ -2476,7 +2476,7 @@ String contactsCollectionName(ContactScope scope) {
 Map<String, dynamic> buildContactRelationshipData({
   required String currentUserUid,
   required String targetUid,
-  reString displayName,
+  required String displayName,
   required String publicId,
   required String status,
 }) {
